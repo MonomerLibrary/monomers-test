@@ -5,7 +5,8 @@ import os
 import glob
 import gemmi
 
-monlib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+#monlib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+monlib_path = os.environ["CLIBD_MON"]
 warnings.formatwarning = lambda x, *a: "Warning: {}\n".format(x)
 
 def read_mon_lib_list():
