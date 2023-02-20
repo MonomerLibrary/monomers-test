@@ -157,5 +157,20 @@ class TestMonlib(unittest.TestCase):
                 try: self.assertEqual(row.str(2), lgroups[row.str(1)], msg="{} in mod {}".format(row.str(1), row.str(0)))
                 except AssertionError as e: self.errors.append(str(e))
 
+    def test_mods(self):
+        doc = gemmi.cif.read(os.path.join(monlib_path, "list", "mon_lib_list.cif"))
+        no_id = []
+        no_new_period = []
+        for b in doc:
+            for row in b.find("_chem_mod_tor.", ["function", "?id", "?new_period"]):
+                if row.str(0) != "delete":
+                    if not row.has(1): no_id.append(b.name)
+                    if not row.has(2): no_new_period.append(b.name)
+
+        try: self.assertFalse(set(no_id), msg="no _chem_mod_tor.id")
+        except AssertionError as e: self.errors.append(str(e))
+        try: self.assertFalse(set(no_new_period), msg="no _chem_mod_tor.new_period")
+        except AssertionError as e: self.errors.append(str(e))
+
 if __name__ == '__main__':
-    unittest.main()
+    unittest.main()    
