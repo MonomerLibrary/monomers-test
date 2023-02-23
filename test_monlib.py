@@ -112,6 +112,25 @@ class TestMonlib(unittest.TestCase):
             try: self.assertFalse(only_in_restr, msg="unknown atoms in mod {} mon {}".format(mn, m.comp_id))
             except AssertionError as e: self.errors.append(str(e))
 
+        doc = gemmi.cif.read(os.path.join(monlib_path, "list", "mon_lib_list.cif"))
+        for b in doc:
+            if b.name.startswith("mod_") and b.name != "mod_list":
+                mon = monlib.modifications[b.name[len("mod_"):]].comp_id
+                if not mon: continue
+                planes = {}
+                for row in b.find("_chem_mod_plane_atom.", ["mod_id", "function", "plane_id", "atom_id"]):
+                    planes.setdefault(row.str(2), []).append((row.str(1), row.str(3)))
+                for p in planes:
+                    if all(x[0] == "add" for x in planes[p]): continue
+                    found = [x for x in monlib.monomers[mon].rt.planes if x.label == p]
+                    try: self.assertTrue(found, msg="{} _chem_mod_plane_atom.plane_id {} not match".format(b.name, p))
+                    except AssertionError as e: self.errors.append(str(e))
+                    if not found: continue
+                    notfound = set(x[1] for x in planes[p]) - set(x.atom for x in found[0].ids)
+                    try: self.assertFalse(notfound, msg="{} _chem_mod_plane_atom.atom_id {} not match in {}".format(b.name, notfound, p))
+                    except AssertionError as e: self.errors.append(str(e))
+                    
+
     def test_group(self):
         comp_list, link_list, mod_list = read_mon_lib_list()
         lgroups = {row.str(0):row.str(1) for row in comp_list.find("_chem_comp.", ["id", "group"])}
@@ -164,13 +183,21 @@ class TestMonlib(unittest.TestCase):
         for b in doc:
             for row in b.find("_chem_mod_tor.", ["function", "?id", "?new_period"]):
                 if row.str(0) != "delete":
-                    if not row.has(1): no_id.append(b.name)
-                    if not row.has(2): no_new_period.append(b.name)
+                    if not row.has(1) or gemmi.cif.is_null(row.str(1)): no_id.append(b.name)
+                    if not row.has(2) or gemmi.cif.is_null(row.str(2)): no_new_period.append(b.name)
 
         try: self.assertFalse(set(no_id), msg="no _chem_mod_tor.id")
         except AssertionError as e: self.errors.append(str(e))
         try: self.assertFalse(set(no_new_period), msg="no _chem_mod_tor.new_period")
         except AssertionError as e: self.errors.append(str(e))
+
+        for b in doc:
+            if b.name.startswith("mod_") and b.name != "mod_list":
+                mod_id = b.name[len("mod_"):]
+                for tag in ("_chem_mod_atom", "_chem_mod_bond", "_chem_mod_angle", "_chem_mod_chir", "_chem_mod_tor", "_chem_mod_plane_atom"):
+                    unk = set(b.find_values(tag+".mod_id")) - {mod_id}
+                    try: self.assertFalse(unk, msg="wrong {}.mod_id in {}".format(tag, b.name))
+                    except AssertionError as e: self.errors.append(str(e))
 
 if __name__ == '__main__':
     unittest.main()    
