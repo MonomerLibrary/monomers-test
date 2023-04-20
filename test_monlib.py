@@ -14,7 +14,7 @@ def read_mon_lib_list():
     comp_list = doc.find_block("comp_list")
     link_list = doc.find_block("link_list")
     mod_list = doc.find_block("mod_list")
-    return comp_list, link_list, mod_list
+    return comp_list, link_list, mod_list, doc
 
 def read_ener_lib():
     doc = gemmi.cif.read(os.path.join(monlib_path, "ener_lib.cif"))
@@ -26,7 +26,7 @@ class TestMonlib(unittest.TestCase):
     def tearDown(self): self.assertEqual(len(self.errors), 0, msg="\n"+"\n".join(self.errors))
 
     def test_monomers(self):
-        comp_list, link_list, mod_list = read_mon_lib_list()
+        comp_list, link_list, mod_list, _ = read_mon_lib_list()
         lgroups = {row.str(0):row.str(1) for row in comp_list.find("_chem_comp.", ["id", "group"])}
         elib = read_ener_lib()
         all_types = set(elib.find_values("_lib_atom.type"))
@@ -72,7 +72,7 @@ class TestMonlib(unittest.TestCase):
         except AssertionError as e: self.errors.append(str(e))
 
     def test_gemmi_monlib(self):
-        comp_list, link_list, mod_list = read_mon_lib_list()
+        comp_list, link_list, mod_list, _ = read_mon_lib_list()
         lgroups = {row.str(0):row.str(1) for row in comp_list.find("_chem_comp.", ["id", "group"])}
         try: monlib = gemmi.read_monomer_lib(monlib_path, list(lgroups))
         except Exception as e: self.errors.append(str(e))
@@ -91,11 +91,16 @@ class TestMonlib(unittest.TestCase):
             if l.side1.comp == l.side2.comp == "": continue
             atoms = atoms_from_rt(l.rt)
             for i in range(1, 3):
-                mon = (l.side1, l.side2)[i-1].comp
+                side = (l.side1, l.side2)[i-1]
+                mon = side.comp
                 if not mon: continue
                 only_in_restr = set(a.atom for a in atoms if a.comp == i) - set(a.id for a in monlib.monomers[mon].atoms)
                 try: self.assertFalse(only_in_restr, msg="unknown atoms in link {} mon {}".format(ln, mon))
                 except AssertionError as e: self.errors.append(str(e))
+                mod = side.mod
+                if mod:
+                    try: self.assertTrue(mod in monlib.modifications, msg="undefined mod {} in link {}".format(mod, ln))
+                    except AssertionError as e: self.errors.append(str(e))
 
         for mn in monlib.modifications:
             m = monlib.modifications[mn]
@@ -132,7 +137,7 @@ class TestMonlib(unittest.TestCase):
                     
 
     def test_group(self):
-        comp_list, link_list, mod_list = read_mon_lib_list()
+        comp_list, link_list, mod_list, _ = read_mon_lib_list()
         lgroups = {row.str(0):row.str(1) for row in comp_list.find("_chem_comp.", ["id", "group"])}
         lg_set = set(lgroups.values())
         all_set = set(["peptide", "P-peptide", "M-peptide", "DNA", "RNA", "pyranose", "ketopyranose", "furanose", "NON-POLYMER"])
@@ -140,7 +145,7 @@ class TestMonlib(unittest.TestCase):
         except AssertionError as e: self.errors.append(str(e))
 
     def test_links(self):
-        comp_list, link_list, mod_list = read_mon_lib_list()
+        comp_list, link_list, mod_list, doc = read_mon_lib_list()
         lgroups = {row.str(0):row.str(1) for row in comp_list.find("_chem_comp.", ["id", "group"])}
         known_groups = set(lgroups.values())
         known_groups.add("DNA/RNA") # can we really consider these known groups?
@@ -175,6 +180,8 @@ class TestMonlib(unittest.TestCase):
             if row.str(1):
                 try: self.assertEqual(row.str(2), lgroups[row.str(1)], msg="{} in mod {}".format(row.str(1), row.str(0)))
                 except AssertionError as e: self.errors.append(str(e))
+            try: self.assertTrue(doc.find_block("mod_" + row.str(0)), msg="undefined mod {} in mod_list".format(row.str(0)))
+            except AssertionError as e: self.errors.append(str(e))
 
     def test_mods(self):
         doc = gemmi.cif.read(os.path.join(monlib_path, "list", "mon_lib_list.cif"))
