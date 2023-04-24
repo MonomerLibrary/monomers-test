@@ -206,5 +206,29 @@ class TestMonlib(unittest.TestCase):
                     try: self.assertFalse(unk, msg="wrong {}.mod_id in {}".format(tag, b.name))
                     except AssertionError as e: self.errors.append(str(e))
 
+    def test_ener_lib(self):
+        elib = read_ener_lib()
+        hb_types = set(elib.find_values("_lib_atom.hb_type"))
+        try: self.assertEqual(hb_types, set(["N","B","A","D","H"]), msg="invalid _lib_atom.hb_type")
+        except AssertionError as e: self.errors.append(str(e))
+
+        all_types = set(elib.find_values("_lib_atom.type"))
+        bond_atoms = set(x for i in (1,2) for x in elib.find_values("_lib_bond.atom_type_{}".format(i)))
+        undef = bond_atoms - all_types
+        try: self.assertFalse(undef, msg="undefined atom_type used in _lib_bond.atom_type_*: {}".format(undef))
+        except AssertionError as e: self.errors.append(str(e))
+        angl_atoms = set(x for i in (1,2,3) for x in elib.find_values("_lib_angle.atom_type_{}".format(i)))
+        undef = angl_atoms - all_types
+        try: self.assertFalse(undef, msg="undefined atom_type used in _lib_angle.atom_type_*: {}".format(undef))
+        except AssertionError as e: self.errors.append(str(e))
+        tors_atoms = set(x for i in (1,2,3,4) for x in elib.find_values("_lib_tors.atom_type_{}".format(i)))
+        undef = tors_atoms - all_types
+        try: self.assertFalse(undef, msg="undefined atom_type used in _lib_tors.atom_type_*: {}".format(undef))
+        except AssertionError as e: self.errors.append(str(e))
+        vdw_atoms = set(x for i in (1,2) for x in elib.find_values("_lib_vdw.atom_type_{}".format(i)))
+        undef = vdw_atoms - all_types
+        try: self.assertFalse(undef, msg="undefined atom_type used in _lib_vdw.atom_type_*: {}".format(undef))
+        except AssertionError as e: self.errors.append(str(e))
+
 if __name__ == '__main__':
     unittest.main()    
