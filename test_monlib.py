@@ -1,3 +1,5 @@
+# todo - check 0 sigmas (for torsions except const*)
+# todo - identical sigmas in the same plane
 from __future__ import absolute_import, division, print_function, generators
 import unittest
 import warnings
@@ -20,6 +22,13 @@ def read_ener_lib():
     doc = gemmi.cif.read(os.path.join(monlib_path, "ener_lib.cif"))
     b = doc.find_block("energy")
     return b
+
+def get_bond(mon, id1, id2):
+    for b in mon.rt.bonds:
+        if (b.id1.atom, b.id2.atom) == (id1, id2):
+            return b
+        if (b.id1.atom, b.id2.atom) == (id2, id1):
+            return b
 
 class TestMonlib(unittest.TestCase):
     def setUp(self): self.errors = []
@@ -102,6 +111,28 @@ class TestMonlib(unittest.TestCase):
                     try: self.assertTrue(mod in monlib.modifications, msg="undefined mod {} in link {}".format(mod, ln))
                     except AssertionError as e: self.errors.append(str(e))
 
+        # test if mod is applicable
+        for ln in monlib.links:
+            l = monlib.links[ln]
+            for i, side in enumerate((l.side1, l.side2)):
+                if side.comp == "" or side.mod == "": continue
+                m = monlib.modifications[side.mod]
+                if m.comp_id == side.comp: continue # dedicated mod will be checked
+                undef = set()
+                for x in m.atom_mods:
+                    a = monlib.monomers[side.comp].find_atom(x.old_id)
+                    if chr(x.func) in ("c", "d") and a is None:
+                        undef.add(x.old_id)
+                for x in m.rt.bonds:
+                    if chr(x.id1.comp) in ("c", "d"):
+                        mon_bond = get_bond(monlib.monomers[side.comp], x.id1.atom, x.id2.atom)
+                        if mon_bond is None:
+                            undef.add(x.id1.atom+"-"+x.id2.atom)
+                # should check other restraints also
+
+                try: self.assertFalse(undef, msg="mod {} is not applicable to {} (undef {})".format(side.mod, side.comp, undef))
+                except AssertionError as e: self.errors.append(str(e))
+
         for mn in monlib.modifications:
             m = monlib.modifications[mn]
             if not m.comp_id: continue
@@ -112,9 +143,13 @@ class TestMonlib(unittest.TestCase):
             # atoms may be added in modification
             mon_atoms = set(a.id for a in monlib.monomers[m.comp_id].atoms)
             added_atoms = set(am.new_id for am in m.atom_mods if chr(am.func)=="a")
+            chged_atoms = set(am.old_id for am in m.atom_mods if chr(am.func)=="c")
             deled_atoms = set(am.old_id for am in m.atom_mods if chr(am.func)=="d")
             only_in_restr = set(a.atom for a in atoms) - ((mon_atoms | added_atoms) - deled_atoms)
             try: self.assertFalse(only_in_restr, msg="unknown atoms in mod {} mon {}".format(mn, m.comp_id))
+            except AssertionError as e: self.errors.append(str(e))
+            undefs = (deled_atoms | chged_atoms) - mon_atoms 
+            try: self.assertFalse(undefs, msg="changing or deleting undefined atoms in mod {} mon {}".format(mn, m.comp_id))
             except AssertionError as e: self.errors.append(str(e))
 
         doc = gemmi.cif.read(os.path.join(monlib_path, "list", "mon_lib_list.cif"))
