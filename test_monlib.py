@@ -225,8 +225,10 @@ class TestMonlib(unittest.TestCase):
         for b in doc:
             for row in b.find("_chem_mod_tor.", ["function", "?id", "?new_period"]):
                 if row.str(0) != "delete":
-                    if not row.has(1) or gemmi.cif.is_null(row.str(1)): no_id.append(b.name)
-                    if not row.has(2) or gemmi.cif.is_null(row.str(2)): no_new_period.append(b.name)
+                    if not row.has(1) or gemmi.cif.is_null(row[1]): no_id.append(b.name)
+                    if not row.has(2) or gemmi.cif.is_null(row[2]): no_new_period.append(b.name)
+                elif row.has(2) and gemmi.cif.is_null(row[2]):
+                    warnings.warn("{}: _chem_mod_tor.new_period '.' causes a problem in old gemmi".format(b.name))
 
         try: self.assertFalse(set(no_id), msg="no _chem_mod_tor.id")
         except AssertionError as e: self.errors.append(str(e))
