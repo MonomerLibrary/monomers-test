@@ -6,6 +6,8 @@ import warnings
 import os
 import glob
 import gemmi
+import math
+import collections
 
 #monlib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 monlib_path = os.environ["CLIBD_MON"]
@@ -30,6 +32,43 @@ def get_bond(mon, id1, id2):
         if (b.id1.atom, b.id2.atom) == (id2, id1):
             return b
 
+def check_tors(mon): # mon, link or mod
+    ideals = {2: 0, 3: 60, 6: 0}
+    if hasattr(mon, "id"): # link or mod
+        name = mon.id
+    else: # monomer
+        name = mon.name
+        if mon.group == gemmi.ChemComp.Group.Peptide:
+            name += "(peptide)"
+    for t in mon.rt.torsions:
+        if t.id1.comp == 100: continue # delete
+        if not t.label.startswith(("chi", "sp2_sp2")): continue # and not t.id4.atom.startswith("H"): continue # ad hoc
+        if t.period in ideals:
+            cos = math.cos(math.radians(t.period * (t.value - ideals[t.period])))
+            if cos != 1:
+                warnings.warn("strange torsion ideal: {} {} per={} value={}".format(name, t.label, t.period, t.value))
+
+def check_monomer_chemtype(doc, name):
+    return {} # turned off for now as it gives too many errors
+    num_h = dict(NSP=0, NSP1=1, NS=0, NS1=1, NC1=1, NC2=2, NH0=0, NH1=1, NH2=2,
+                 NPA=0, NPB=0, NRD5=0, NRD6=0, NR15=1, NR16=1, NR5=0, NR6=0,
+                 N=0, NT=0, NT1=1, NT2=2, NT3=3, NT4=4, N30=0, N31=1, N32=2, N33=3,
+                 S=0, SH1=1)
+    monlib = gemmi.MonLib()
+    monlib.read_monomer_doc(doc)
+    cc = monlib.monomers[name]
+    bond_h = {}
+    ret = []
+    for b in cc.rt.bonds:
+        if cc.find_atom(b.id1.atom).is_hydrogen():
+            bond_h[b.id2.atom] = bond_h.get(b.id2.atom, 0) + 1
+        if cc.find_atom(b.id2.atom).is_hydrogen():
+            bond_h[b.id1.atom] = bond_h.get(b.id1.atom, 0) + 1
+    for a in cc.atoms:
+        if a.chem_type in num_h and a.id in bond_h and num_h[a.chem_type] != bond_h[a.id]:
+            ret.append("{}({},{})".format(a.id, a.chem_type, bond_h[a.id])) # wrong chem type
+    return ret
+
 class TestMonlib(unittest.TestCase):
     def setUp(self): self.errors = []
     def tearDown(self): self.assertEqual(len(self.errors), 0, msg="\n"+"\n".join(self.errors))
@@ -50,13 +89,24 @@ class TestMonlib(unittest.TestCase):
                 except AssertionError as e: self.errors.append(str(e))
 
             b = doc[-1]
-            all_atoms = []
-            for row in b.find("_chem_comp_atom.", ["atom_id", "type_energy"]):
+            all_atoms, alt_atoms = [], []
+            for row in b.find("_chem_comp_atom.", ["atom_id", "type_energy", "?alt_atom_id"]):
                 # test unknown energy type
                 try: self.assertTrue(row.str(1) in all_types, msg="{} unknown energy type {} {}".format(os.path.basename(f), row[0], row[1]))
                 except AssertionError as e: self.errors.append(str(e))
                 all_atoms.append(row.str(0))
+                if row.has(2): alt_atoms.append(row.str(2))
 
+            # check duplication
+            counts = collections.Counter(all_atoms)
+            try: self.assertFalse(any(counts[x] > 1 for x in counts),
+                                  msg="{} duplicated atoms {}".format(os.path.basename(f), counts))
+            except AssertionError as e: self.errors.append(str(e))
+            counts = collections.Counter(alt_atoms)
+            try: self.assertFalse(any(counts[x] > 1 for x in counts),
+                                  msg="{} duplicated alt atoms {}".format(os.path.basename(f), counts))
+            except AssertionError as e: self.errors.append(str(e))
+            
             # test unknown atoms in restraints
             all_atoms = set(all_atoms)
             for t1, t2 in (("_chem_comp_bond.", ["atom_id_1", "atom_id_2"]),
@@ -71,6 +121,10 @@ class TestMonlib(unittest.TestCase):
                         #except AssertionError as e: self.errors.append(str(e))
                         if row.str(i) not in all_atoms:
                             warnings.warn("Unknown atom in restraint: {} {}{} {}".format(os.path.basename(f), t1, t2[i], row.str(i)))
+            # check chem types
+            invalid_chemtypes = check_monomer_chemtype(doc, b.name[len("comp_"):])
+            if invalid_chemtypes:
+                self.errors.append("{} invalid chem types {}".format(os.path.basename(f), ",".join(invalid_chemtypes)))
 
         only_in_cif = set(cgroups) - set(lgroups)
         try: self.assertFalse(only_in_cif, msg="groups only in cif files")
@@ -169,7 +223,11 @@ class TestMonlib(unittest.TestCase):
                     notfound = set(x[1] for x in planes[p]) - set(x.atom for x in found[0].ids)
                     try: self.assertFalse(notfound, msg="{} _chem_mod_plane_atom.atom_id {} not match in {}".format(b.name, notfound, p))
                     except AssertionError as e: self.errors.append(str(e))
-                    
+
+        # check torsions
+        #for r in (monlib.monomers, monlib.links, monlib.modifications):
+        #    for m in r:
+        #        check_tors(r[m])
 
     def test_group(self):
         comp_list, link_list, mod_list, _ = read_mon_lib_list()
