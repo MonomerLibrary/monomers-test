@@ -325,5 +325,15 @@ class TestMonlib(unittest.TestCase):
         try: self.assertFalse(undef, msg="undefined atom_type used in _lib_vdw.atom_type_*: {}".format(undef))
         except AssertionError as e: self.errors.append(str(e))
 
+    def test_links_and_mods_cif(self):
+        path = os.path.join(monlib_path, "links_and_mods.cif")
+        if not os.path.exists(path): return
+        doc0 = gemmi.cif.read(os.path.join(monlib_path, "list", "mon_lib_list.cif"))
+        doc = gemmi.cif.read(path)
+        for b in doc:
+            b0 = doc0.find_block(b.name)
+            try: self.assertEqual(b.as_string(), b0.as_string(), msg=f"links_and_mods.cif: {b.name} mismatch")
+            except AssertionError as e: self.errors.append(str(e))
+
 if __name__ == '__main__':
     unittest.main()    
